@@ -12,6 +12,11 @@ type Inputs = {
   longitude?: number;
 };
 
+type FoodDesertResult = {
+  isFoodDesert: boolean;
+  foodSources: any[];
+};
+
 export default function CheckAreaForm() {
   const { register, handleSubmit, formState: { errors }, setValue, watch } = useForm<Inputs>()
   const [isUsingGeolocation, setIsUsingGeolocation] = useState(false)
@@ -19,6 +24,7 @@ export default function CheckAreaForm() {
   const [showMap, setShowMap] = useState(false)
   const [isLoading, setIsLoading] = useState(false)
   const [geocodeError, setGeocodeError] = useState<string | null>(null)
+  const [foodDesertResult, setFoodDesertResult] = useState<FoodDesertResult | null>(null)
 
   const watchLatitude = watch('latitude')
   const watchLongitude = watch('longitude')
@@ -31,32 +37,58 @@ export default function CheckAreaForm() {
     }
   }, [isUsingGeolocation, location, setValue])
 
+  const checkFoodDesertStatus = async (latitude: number, longitude: number) => {
+    console.log('Sending request with coordinates:', latitude, longitude);
+    const response = await fetch('/api/checkFoodDesert', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ latitude, longitude }),
+    });
+  
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error('API response:', response.status, errorText);
+      throw new Error(`Failed to check food desert status: ${errorText}`);
+    }
+  
+    return await response.json();
+  };
+
   const onSubmit: SubmitHandler<Inputs> = async (data) => {
-    setIsLoading(true)
-    setGeocodeError(null)
+    setIsLoading(true);
+    setGeocodeError(null);
+    setFoodDesertResult(null);
     
     try {
+      let lat = data.latitude;
+      let lng = data.longitude;
+
       if (!isUsingGeolocation) {
-        const coordinates = await geocodeAddress(data.address)
+        const coordinates = await geocodeAddress(data.address);
         if (coordinates) {
-          setValue('latitude', coordinates[0])
-          setValue('longitude', coordinates[1])
+          [lat, lng] = coordinates;
+          setValue('latitude', lat);
+          setValue('longitude', lng);
         } else {
-          throw new Error('Unable to geocode the provided address')
+          throw new Error('Unable to geocode the provided address');
         }
       }
-      
-      setShowMap(true)
-      // TODO: Implement backend API call to check if it's a food desert
-      // For now, let's just simulate a delay
-      await new Promise(resolve => setTimeout(resolve, 1000))
-      // TODO: Update UI with food desert information
+
+      if (lat && lng) {
+        setShowMap(true);
+        const result = await checkFoodDesertStatus(lat, lng);
+        setFoodDesertResult(result);
+      } else {
+        throw new Error('Invalid coordinates');
+      }
     } catch (error) {
-      setGeocodeError(error instanceof Error ? error.message : 'An unknown error occurred')
+      setGeocodeError(error instanceof Error ? error.message : 'An unknown error occurred');
     } finally {
-      setIsLoading(false)
+      setIsLoading(false);
     }
-  }
+  };
 
   return (
     <div>
@@ -111,12 +143,16 @@ export default function CheckAreaForm() {
         </div>
       )}
       
-      {/* Placeholder for food desert information */}
-      {showMap && (
-        <div className="mt-6 p-4 bg-white shadow rounded-lg">
+      {foodDesertResult && (
+        <div className="mt-6 p-4 bg-white shadow rounded-lg text-zinc-950">
           <h2 className="text-xl font-semibold mb-2">Area Information</h2>
-          <p>Loading food desert information...</p>
-          {/* We'll replace this with actual data from our backend later */}
+          <p>This area is {foodDesertResult.isFoodDesert ? '' : 'not '}considered a food desert.</p>
+          <h3 className="text-lg font-semibold mt-4 mb-2">Nearby Food Sources:</h3>
+          <ul>
+            {foodDesertResult.foodSources.map((source, index) => (
+              <li key={index}>{source.place_name} - {(source.properties.distance / 1609.34).toFixed(2)} miles</li>
+            ))}
+          </ul>
         </div>
       )}
     </div>
